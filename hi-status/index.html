@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>hi Status</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="images/favicon-32x32.png">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link href="style.css" rel="stylesheet">
+</head>
+
+<body class="p-4 bg-light">
+<div class="container mt-4 mwidth">
+    <div class="d-grid col-6 mx-auto text-center">
+        <img src="images/dlogo.svg" alt="logo" class="mt-4 img-fluid mx-auto d-block">
+        <p class="text-muted">An &nbsp;TEST&nbsp;Company</p>
+    </div>
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background-color: #ffffff;
+            color: #000000;
+            padding: 40px;
+        }
+        h1 {
+            color: #000;
+            text-align: center;
+            margin: 20px 0;
+            font-weight: 600;
+
+        }
+        .service-card {
+            background-color: #ffffff;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px auto;
+            width: 60%;
+            box-shadow: 0 0 10px rgba(0,0,0,0.6);
+        }
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .status-badge {
+            background-color: #fff;
+            color: #4caf50;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+        .timeline {
+            display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+        .day-segment {
+            width: 10px;
+            height: 40px;
+            margin-right: 2px;
+            border-radius: 3px;
+            background-color: #4caf50; /* default green */
+            cursor: pointer;
+            position: relative;
+        }
+        .day-segment.error {
+            background-color: #f44336; /* red if explicitly non-operational */
+        }
+        #floatingTooltip {
+            display: none;
+            position: fixed;
+            background: #333;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 5px;
+            font-size: 14px;
+            white-space: nowrap;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .footer-row {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #aaa;
+        }
+        .logo-container {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .logo {
+            width: 150px;
+            height: auto;
+            display: flex;
+        }
+        .last-updated {
+            text-align: center;
+            font-size: 0.9em;
+            color: #aaa;
+            margin-top: 20px;
+        }
+        .day-segment.hovered {
+            background-color: #bdbdbd !important; /* grey highlight */
+        }
+        /* ---------- Loading Screen ---------- */
+        .loading-screen {
+            position: fixed;
+            inset: 0;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .spinner {
+            width: 70px;
+            height: 70px;
+            border: 8px solid #e5e5e5;
+            border-top: 8px solid #0078D4;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 25px;
+        }
+
+        .loading-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #333;
+            margin-top: 10px;
+        }
+
+        .loading-text {
+            color: #666;
+            margin-top: 10px;
+            font-size: 16px;
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+    </style>
+    </head>
+</div>
+<body>
+<!-- Logo section -->
+<!-- Last updated info -->
+<div id="lastUpdated" class="last-updated"></div>
+
+<div id="loadingScreen" class="loading-screen">
+
+    <div class="spinner"></div>
+
+    <div class="loading-title">
+        Loading Dashboard
+    </div>
+
+    <div class="loading-text" id="loadingMessage">
+        Loading application status timeline...
+    </div>
+
+</div>
+
+
+<div id="dashboard" style="display:none;"></div>
+<div id="floatingTooltip"></div>
+
+<script>
+    async function loadStatus() {
+        // const utcTime = item.timestamp;
+        //
+        // const localTime = new Date(utcTime).toLocaleString();
+        //
+        // document.getElementById("time").innerText = localTime;
+
+        const dashboard = document.getElementById("dashboard");
+        const floatingTooltip = document.getElementById("floatingTooltip");
+        const lastUpdatedDiv = document.getElementById("lastUpdated");
+
+        try {
+
+            const response = await fetch(
+                "https://test.blob.core.windows.net/devops/dns_status/dns_status.json?t=" + new Date().getTime(),
+            );
+
+            if (!response.ok) {
+                throw new Error("Unable to load dashboard_state.json");
+            }
+
+            const data = await response.json();
+
+            dashboard.innerHTML = "";
+
+            // Find latest timestamp across all services
+            let latestTimestamp = null;
+
+            Object.values(data).forEach(service => {
+                Object.values(service).forEach(entries => {
+                    entries.forEach(entry => {
+
+                        const ts = new Date(entry.timestamp);
+
+                        if (!latestTimestamp || ts > latestTimestamp) {
+                            latestTimestamp = ts;
+                        }
+                    });
+                });
+            });
+
+            const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+            const timeZoneName = new Intl.DateTimeFormat("en-US", {
+                timeZone: userTimeZone,
+                timeZoneName: "short"
+            })
+                .formatToParts(new Date())
+                .find(part => part.type === "timeZoneName")?.value;
+
+            lastUpdatedDiv.textContent = latestTimestamp
+                ? `Last Updated: ${latestTimestamp.toLocaleString(undefined, {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    timeZoneName: "short"
+                })}`
+                : "Last Updated: No data available";
+
+            // Generate last 90 days
+            const last90Days = [];
+
+            const today = new Date();
+
+            for (let i = 89; i >= 0; i--) {
+
+                const d = new Date(today);
+
+                d.setDate(today.getDate() - i);
+
+                last90Days.push(
+                    d.toISOString().split("T")[0]
+                );
+            }
+
+            const fragment = document.createDocumentFragment();
+
+            Object.keys(data).forEach(dns => {
+
+                const serviceCard = document.createElement("div");
+                serviceCard.className = "service-card";
+
+                const headerRow = document.createElement("div");
+                headerRow.className = "header-row";
+
+                const title = document.createElement("span");
+                title.textContent = dns;
+                title.style.fontWeight = "600";
+
+                const badge = document.createElement("div");
+                badge.className = "status-badge";
+
+                // Find latest entry
+                let latestEntry = null;
+
+                Object.values(data[dns]).forEach(entries => {
+
+                    entries.forEach(entry => {
+
+                        if (
+                            !latestEntry ||
+                            new Date(entry.timestamp) >
+                            new Date(latestEntry.timestamp)
+                        ) {
+                            latestEntry = entry;
+                        }
+                    });
+                });
+
+                const latestStatus =
+                    latestEntry?.status || "Unknown";
+
+                badge.textContent = latestStatus;
+
+                badge.style.color =
+                    latestStatus === "Operational"
+                        ? "#4caf50"
+                        : "#f44336";
+
+                headerRow.appendChild(title);
+                headerRow.appendChild(badge);
+
+                serviceCard.appendChild(headerRow);
+
+                const timelineBar = document.createElement("div");
+                timelineBar.className = "timeline";
+
+                let totalChecks = 0;
+                let successfulChecks = 0;
+
+                last90Days.forEach(date => {
+                    const entries = [...(data[dns][date] || [])];
+                    let originalBackground = "#4caf50";
+
+                    const seg = document.createElement("div");
+
+                    seg.className = "day-segment";
+
+                    seg.style.display = "flex";
+                    seg.style.flexDirection = "column-reverse";
+                    seg.style.overflow = "hidden";
+                    seg.addEventListener("mouseenter", () => {
+                        originalBackground = seg.style.backgroundColor;
+                        seg.classList.add("hovered");
+                    });
+
+                    seg.addEventListener("mouseleave", () => {
+                        seg.classList.remove("hovered");
+
+                        // restore original color
+                        if (entries.length === 0) {
+                            seg.style.backgroundColor = "#9e9e9e";
+                        } else {
+                            seg.style.backgroundColor = originalBackground;
+                        }
+
+                        floatingTooltip.style.display = "none";
+                    });
+                    if (entries.length > 0) {
+
+                        entries.sort(
+                            (a, b) =>
+                                new Date(a.timestamp) -
+                                new Date(b.timestamp)
+                        );
+
+                        const partHeight =
+                            100 / entries.length;
+
+                        entries.forEach(entry => {
+
+                            const part =
+                                document.createElement("div");
+
+                            const isOperational =
+                                entry.status === "Operational" &&
+                                entry.code !== null;
+
+                            part.style.height =
+                                `${partHeight}%`;
+
+                            part.style.width = "100%";
+
+                            part.style.cursor = "pointer";
+
+                            part.style.backgroundColor =
+                                isOperational
+                                    ? "#4caf50"
+                                    : "#f44336";
+
+                            part.addEventListener(
+                                "mousemove",
+                                e => {
+
+                                    floatingTooltip.style.display =
+                                        "block";
+
+                                    floatingTooltip.style.top =
+                                        `${e.clientY + 15}px`;
+
+                                    floatingTooltip.style.left =
+                                        `${e.clientX + 15}px`;
+
+                                    const timestamp =
+                                        new Date(entry.timestamp);
+
+                                    const formattedTime =
+                                        timestamp.toLocaleString(undefined, {
+                                            day: "2-digit",
+                                            month: "short",
+                                            year: "numeric",
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                            second: "2-digit",
+                                            timeZoneName: "short"
+                                        })
+
+                                    const code = entry.code ?? "N/A";
+
+                                    floatingTooltip.innerHTML = `
+                                    <strong style="color:${isOperational ? '#4caf50' : '#f44336'};">
+                                        ${entry.status} (${code})
+                                    </strong><br>
+                                    ${formattedTime}
+                                    `;
+                                }
+                            );
+
+                            part.addEventListener(
+                                "mouseleave",
+                                () => {
+                                    floatingTooltip.style.display =
+                                        "none";
+                                }
+                            );
+
+                            seg.appendChild(part);
+                        });
+
+                        totalChecks += entries.length;
+
+                        successfulChecks += entries.filter(
+                            e => e.status === "Operational"
+                        ).length;
+
+                    } else {
+
+                        seg.style.backgroundColor = "#9e9e9e";
+
+                        seg.addEventListener(
+                            "mousemove",
+                            e => {
+
+                                floatingTooltip.style.display =
+                                    "block";
+
+                                floatingTooltip.style.top =
+                                    `${e.clientY + 15}px`;
+
+                                floatingTooltip.style.left =
+                                    `${e.clientX + 15}px`;
+
+                                floatingTooltip.innerHTML = `
+                                <strong>${date}</strong><br>
+                                No monitoring data
+                            `;
+                            }
+                        );
+
+                        seg.addEventListener(
+                            "mouseleave",
+                            () => {
+                                floatingTooltip.style.display =
+                                    "none";
+                            }
+                        );
+                    }
+
+                    timelineBar.appendChild(seg);
+                });
+
+                const uptime =
+                    totalChecks > 0
+                        ? (successfulChecks / totalChecks) * 100
+                        : 0;
+
+                const footerRow =
+                    document.createElement("div");
+
+                footerRow.className = "footer-row";
+
+                footerRow.innerHTML = `
+                <span>90 days ago</span>
+                <span>${uptime.toFixed(2)}% uptime</span>
+                <span>Today</span>
+            `;
+
+                serviceCard.appendChild(timelineBar);
+                serviceCard.appendChild(footerRow);
+
+                fragment.appendChild(serviceCard);
+            });
+
+            dashboard.appendChild(fragment);
+            document.getElementById("loadingScreen").style.display = "none";
+            dashboard.style.display = "block";
+
+        } catch (error) {
+
+            console.error(error);
+
+            document.getElementById("loadingScreen").style.display = "none";
+
+            dashboard.style.display = "block";
+
+            dashboard.innerHTML = `
+                <div style="
+                    text-align:center;
+                    color:#f44336;
+                    padding:40px;
+                    font-size:20px;
+                    font-weight:600;">
+                    Failed to load dashboard data.<br><br>
+                    Please try again later.
+                </div>
+        `;
+        }
+    }
+
+    loadStatus();
+
+</script>
+</body>
+<footer className="mt-4 text-center small text-muted">
+    <div className="container">
+        <p className="mb-1">
+        <div class="d-grid col-6 mx-auto text-center">
+            Copyright © 2026 All Rights Reserved.
+            <!-- <a href="hicompany.com/terms" class="text-muted text-decoration-none mx-2">Terms of Use</a>·
+            <a href="hicompany.com/privacy" class="text-muted text-decoration-none mx-2">Privacy Policy</a> -->
+            </p>
+        </div>
+</footer>
+</html>

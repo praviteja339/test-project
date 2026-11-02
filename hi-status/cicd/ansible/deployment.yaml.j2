@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hi-status-secrets
+  namespace: tools
+type: Opaque
+stringData:
+  AZURE_STORAGE_ACCOUNT_NAME: "{{ storage_account_name }}"
+  AZURE_STORAGE_ACCOUNT_KEY: "{{ storage_account_key }}"
+  AZURE_STORAGE_CONTAINER: "devops"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hi-status-dashboard
+  namespace: tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hi-status-dashboard
+  template:
+    metadata:
+      labels:
+        app: hi-status-dashboard
+    spec:
+      containers:
+        - name: hi-status-dashboard
+          image: test.azurecr.io/hi-status:{{ version }}
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: hi-status-secrets
