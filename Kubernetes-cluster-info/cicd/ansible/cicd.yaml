@@ -1,0 +1,179 @@
+- name: Continuous Integration
+  hosts: localhost
+  connection: local
+
+  tasks:
+
+    - set_fact:
+        git_username: "{{ lookup('env', 'git_username') }}"
+        git_password: "{{ lookup('env', 'git_password') }}"
+        config_repo: "{{ lookup('env', 'config_repo') }}"
+        service_principal_id: "{{ lookup('env', 'service_principal_id') }}"
+        service_principal_secret: "{{ lookup('env', 'service_principal_secret') }}"
+        subscription_id: "{{ lookup('env', 'subscription_id') }}"
+        tenant_id: "{{ lookup('env', 'tenant_id') }}"
+        source_dir: "{{ lookup('env', 'source_dir') }}"
+        env_dir: "{{ lookup('env', 'env_dir') }}"
+        config_env: "{{ lookup('env', 'config_env') }}"
+        config_storage_account_name: "{{ lookup('env', 'config_storage_account_name') }}"
+        config_storage_account_key: "{{ lookup('env', 'config_storage_account_key') }}"
+        config_storage_container_name: "{{ lookup('env', 'config_storage_container_name') }}"
+
+        dev_subscription_id: "{{ lookup('env', 'dev_subscription_id') }}"
+        sub_subscription_id: "{{ lookup('env', 'sub_subscription_id') }}"
+        # dev
+        dev_service_principal_id: "{{ lookup('env', 'dev_service_principal_id') }}"
+        dev_service_principal_object_id: "{{ lookup('env', 'dev_service_principal_object_id') }}"
+        dev_service_principal_secret: "{{ lookup('env', 'dev_service_principal_secret') }}"
+        # qa
+        qa_service_principal_id: "{{ lookup('env', 'dev_service_principal_id') }}"
+        qa_service_principal_object_id: "{{ lookup('env', 'dev_service_principal_object_id') }}"
+        qa_service_principal_secret: "{{ lookup('env', 'dev_service_principal_secret') }}"
+
+    - name: Login to Azure using Service Principal {{ service_principal_id }}
+      command: >
+        az login
+        --service-principal
+        --username '{{ service_principal_id }}'
+        --password '{{ service_principal_secret }}'
+        --tenant '{{ tenant_id }}'
+
+    - name: Set subscription {{ subscription_id }} to be current and active
+      command: az account set --subscription {{ subscription_id }}
+
+    - name: Download config files from Azure Blob Storage
+      shell: >
+        az storage blob download-batch
+        --account-name "{{ config_storage_account_name }}"
+        --account-key "{{ config_storage_account_key }}"
+        --source "{{ config_storage_container_name }}"
+        --destination "{{ source_dir }}"
+        --pattern "{{ config_env }}/*"
+
+    - name: Decrypt shared config file
+      shell: >
+        sops -d --input-type yaml --output-type yaml
+        {{ source_dir }}/{{ config_env }}/shared/shared_config.yaml.enc
+        > {{ source_dir }}/{{ config_env }}/shared/shared_config.yaml
+      no_log: true
+
+    - name: Include shared config file
+      include_vars:
+        file: "{{ source_dir }}/{{ config_env }}/shared/shared_config.yaml"
+      no_log: true
+
+    - name: Login to ACR ({{ docker_registry }})
+      shell: echo "{{ service_principal_secret }}" | docker login {{ docker_registry }} --username "{{ service_principal_id }}" --password-stdin
+
+    - name: Read version.yaml
+      include_vars:
+        file: "{{ source_dir }}/kubernetes-clusters-info/version.yaml"
+        name: version_data
+
+    - name: Set version fact
+      set_fact:
+        version: "{{ version_data.version }}"
+
+    - name: Display version
+      debug:
+        msg: "Using version: {{ version }}"
+
+    - name: Build Docker Image on Build Agent
+      command: docker build -t {{ docker_registry }}/cluster-info:{{ version }} .
+      args:
+        chdir: "{{ source_dir }}/kubernetes-clusters-info"
+
+    - name: Push Docker Image to ACR
+      command: docker push {{ docker_registry }}/cluster-info:{{ version }}
+
+    # DEFINE ALL 8 AKS CLUSTERS
+    - name: Define AKS clusters for collector RBAC
+      set_fact:
+        collector_clusters:
+          # DEV
+          - environment: DEV
+            subscription_id: "{{ dev_subscription_id }}"
+            resource_group: "TEST-AKS-Dev"
+            aks_name: "TEST-AKS-Dev-Cluster"
+            service_principal_id: "{{ dev_service_principal_id }}"
+            service_principal_object_id: "{{ dev_service_principal_object_id }}"
+            service_principal_secret: "{{ dev_service_principal_secret }}"
+          # QA
+          - environment: QA
+            subscription_id: "{{ dev_subscription_id }}"
+            resource_group: "TEST-AKS-QA"
+            aks_name: "TEST-AKS-QA-Cluster"
+            service_principal_id: "{{ dev_service_principal_id }}"
+            service_principal_object_id: "{{ dev_service_principal_object_id }}"
+            service_principal_secret: "{{ dev_service_principal_secret }}"
+
+    # RENDER RBAC MANIFEST FOR EACH CLUSTER
+    - name: Render collector RBAC manifests
+      template:
+        src: "{{ source_dir }}/kubernetes-clusters-info/cicd/ansible/cluster-info-rbac.yaml.j2"
+        dest: "/tmp/cluster-info-rbac-{{ item.environment }}.yaml"
+      vars:
+        collector_service_principal_object_id: "{{ item.service_principal_object_id }}"
+      loop: "{{ collector_clusters }}"
+      loop_control:
+        label: "{{ item.environment }}"
+
+    # APPLY RBAC TO ALL 8 AKS CLUSTERS
+    - name: Apply collector RBAC to all AKS clusters
+      shell: |
+        set -e
+
+        {% for cluster in collector_clusters %}
+
+        echo "=========================================="
+        echo "Configuring RBAC for {{ cluster.environment }}"
+        echo "AKS Cluster: {{ cluster.aks_name }}"
+        echo "Resource Group: {{ cluster.resource_group }}"
+        echo "=========================================="
+
+        az login \
+          --service-principal \
+          --username '{{ cluster.service_principal_id }}' \
+          --password '{{ cluster.service_principal_secret }}' \
+          --tenant '{{ tenant_id }}' \
+          >/dev/null
+
+        az account set \
+          --subscription '{{ cluster.subscription_id }}'
+
+        az aks get-credentials \
+          --resource-group '{{ cluster.resource_group }}' \
+          --name '{{ cluster.aks_name }}' \
+          --admin \
+          --overwrite-existing
+
+        kubectl apply \
+          -f /tmp/cluster-info-rbac-{{ cluster.environment }}.yaml
+
+        {% endfor %}
+
+    - name: Restore deployment Azure identity
+      shell: |
+        az login \
+          --service-principal \
+          --username "{{ service_principal_id }}" \
+          --password "{{ service_principal_secret }}" \
+          --tenant "{{ tenant_id }}" \
+          --output none
+
+        az account set \
+          --subscription "{{ subscription_id }}"
+      no_log: true
+
+    - name: Pull AKS cluster config
+      command: az aks get-credentials --resource-group "{{ resource_group_name }}" --name "{{ aks_name }}" --admin --overwrite-existing
+
+    - name: Render Kubernetes manifests with env values
+      template:
+        src: deployment.yaml.j2
+        dest: "{{ source_dir }}/kubernetes-clusters-info/cicd/ansible/deployment.yaml"
+
+    - name: Apply Kubernetes deployment and secrets
+      command: kubectl apply -f cicd/ansible/deployment.yaml
+      args:
+        chdir: "{{ source_dir }}/kubernetes-clusters-info"

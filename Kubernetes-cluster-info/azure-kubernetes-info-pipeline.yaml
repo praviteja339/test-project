@@ -1,0 +1,28 @@
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+pr: none
+
+variables:
+  - group: TEST - Constants
+
+pool:
+  vmImage: ubuntu-22.04
+
+steps:
+  - checkout: self
+  - script: |
+      pwd
+      echo "Repository contents:"
+      ls -la
+      
+      echo "Application folder:"
+      ls -la kubernetes-clusters-info/ui
+    displayName: Verify structure
+
+  - task: AzureStaticWebApp@0
+    inputs:
+      app_location: 'kubernetes-clusters-info/ui'
+      output_location: ''
+      skip_app_build: true
+      azure_static_web_apps_api_token: $(info_swa_token)

@@ -1,0 +1,58 @@
+name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.SourceBranchName)
+
+trigger: none
+pr: none
+
+variables:
+  - group: TEST - Dev
+  - group: TEST - Constants
+
+stages:
+  - stage: Build
+    jobs:
+      - job: KUBERNETES_CLUSTER_INFO_DASHBOARD
+        pool:
+          vmImage: 'ubuntu-22.04'
+        container:
+          image: "test.azurecr.io/devops/services-build:$(services_build_tag_version)"
+          mapDockerSocket: true
+          endpoint: 'TEST Docker Registry'
+
+        steps:
+          - task: Bash@3
+            displayName: 'Run Ansible - kubernetes dashboard build'
+            env:
+              git_username: "$(git_username)"
+              git_password: "$(git_password)"
+              config_repo: "$(config_repo)"
+              service_principal_id: "$(service_principal_id)"
+              service_principal_secret: "$(service_principal_secret)"
+              subscription_id: "$(subscription_id)"
+              tenant_id: "$(tenant_id)"
+              source_dir: "$(Build.SourcesDirectory)"
+              env_dir: "$(Agent.BuildDirectory)/env"
+              config_env: "$(config_env)"
+              config_storage_account_name: "$(config_storage_account_name)"
+              config_storage_account_key: "$(config_storage_account_key)"
+              config_storage_container_name: "$(config_storage_container_name)"
+              HELM_EXPERIMENTAL_OCI: 1
+              sub_subscription_id : "$(sub_subscription_id)"
+              dev_subscription_id : "$(dev_subscription_id)"
+              # dev
+              dev_service_principal_id: "$(dev_service_principal_id)"
+              dev_service_principal_object_id: "$(dev_service_principal_object_id)"
+              dev_service_principal_secret: "$(dev_service_principal_secret)"
+              # qa
+              qa_service_principal_id: "$(dev_service_principal_id)"
+              qa_service_principal_object_id: "$(dev_service_principal_object_id)"
+              qa_service_principal_secret: "$(dev_service_principal_secret)"
+
+              storage_account_name: "$(storage_account_name)"
+              storage_account_key: "$(storage_account_key)"
+              storage_container_name: "$(storage_container_name)"
+
+            inputs:
+              targetType: 'inline'
+
+              script: |
+                ansible-playbook kubernetes-clusters-info/cicd/ansible/cicd.yaml -i "localhost," -v

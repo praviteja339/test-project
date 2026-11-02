@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: clusterinfo-secrets
+  namespace: tools
+type: Opaque
+stringData:
+  tenant_id: "{{ tenant_id }}"
+  file_name: "cluster_info.json"
+  storage_account_name: "{{ storage_account_name }}"
+  storage_account_key: "{{ storage_account_key }}"
+  storage_container_name: "devops"
+  dev_subscription_id: "{{ dev_subscription_id }}"
+  sub_subscription_id: "{{ sub_subscription_id }}"
+  dev_service_principal_id: "{{ dev_service_principal_id }}"
+  dev_service_principal_secret: "{{ dev_service_principal_secret }}"
+  qa_service_principal_id: "{{ dev_service_principal_id }}"
+  qa_service_principal_secret: "{{ dev_service_principal_secret }}"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-info
+  namespace: tools
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-info
+  template:
+    metadata:
+      labels:
+        app: cluster-info
+    spec:
+      containers:
+        - name: cluster-info
+          image: test.azurecr.io/cluster-info:{{ version }}
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: clusterinfo-secrets

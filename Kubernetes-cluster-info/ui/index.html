@@ -1,0 +1,642 @@
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AKS Infrastructure Overview</title>
+    <!-- Browser tab favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="header">
+    <div class="logo-container">
+        <img src="test-logo.png" alt="Company Logo">
+    </div>
+
+    <div class="header-left">
+        <div class="header-title">
+            <h1>
+                AKS Infrastructure Overview
+            </h1>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <!------- cluster selector ------->
+    <div class="cluster-selector-container">
+        <label for="clusterSelect">
+            Select Cluster
+        </label>
+        <select id="clusterSelect">
+            <option
+                    value=""
+                    selected
+                    disabled
+            >
+                Select a Cluster
+            </option>
+            <option value="ALL">
+                All Clusters
+            </option>
+        </select>
+    </div>
+
+    <!----- dashboard ------>
+    <div id="dashboard"></div>
+</div>
+<script>
+    let dashboardData = null;
+    let selectedCluster = null;
+    /*-------- load json ----- */
+    async function loadDashboard() {
+        try {
+            const response = await fetch(
+                `https://test.blob.core.windows.net/devops/clusters_info/cluster_info.json?t=${Date.now()}`
+            );
+            if (!response.ok) {
+                throw new Error(
+                    "Unable to load latest.json"
+                );
+            }
+            dashboardData =
+                await response.json();
+            populateClusterDropdown();
+            if (selectedCluster !== null) {
+                renderDashboard();
+            }
+        } catch (error) {
+            console.error(
+                "Dashboard loading error:",
+                error
+            );
+        }
+    }
+    function getClusters() {
+        if (
+            !dashboardData ||
+            !dashboardData.clusters
+        ) {
+            return {};
+        }
+        return dashboardData.clusters;
+    }
+    function getClusterNames() {
+        const clusters =
+            getClusters();
+        return Object.keys(
+            clusters
+        );
+    }
+
+    /* ------ cluster dropdown ------ */
+    function populateClusterDropdown() {
+        const select =
+            document.getElementById(
+                "clusterSelect"
+            );
+        /* Keep placeholder and All Clusters.*/
+        select.innerHTML = `
+            <option
+                value=""
+                disabled
+            >
+                Select a Cluster
+            </option>
+            <option value="ALL">
+                All Clusters
+            </option>
+        `;
+        const clusterNames =
+            getClusterNames();
+        /* Add individual clusters */
+        clusterNames.forEach(
+            clusterName => {
+                const option =
+                    document.createElement(
+                        "option"
+                    );
+                option.value =
+                    clusterName;
+                option.textContent =
+                    clusterName;
+                select.appendChild(
+                    option
+                );
+            }
+        );
+        /* Restore current selection after automatic refresh.*/
+        if (selectedCluster === null) {
+            select.value = "";
+        } else {
+            select.value =
+                selectedCluster;
+        }
+    }
+
+    document
+        .getElementById(
+            "clusterSelect"
+        )
+        .addEventListener(
+            "change",
+            function () {
+                selectedCluster =
+                    this.value;
+                renderDashboard();
+            }
+        );
+    function renderDashboard() {
+        if (
+            selectedCluster === null ||
+            selectedCluster === ""
+        ) {
+            document.getElementById(
+                "dashboard"
+            ).innerHTML = "";
+            return;
+        }
+        const clusters =
+            getClusters();
+        const clusterNames =
+            Object.keys(
+                clusters
+            );
+        if (
+            clusterNames.length === 0
+        ) {
+            document.getElementById(
+                "dashboard"
+            ).innerHTML = `
+                <div class="error-box">
+                    <h2>
+                        No cluster data available
+                    </h2>
+                </div>
+            `;
+            return;
+        }
+        if (
+            selectedCluster === "ALL"
+        ) {
+            renderAllClusters(
+                clusters
+            );
+            return;
+        }
+        const cluster =
+            clusters[
+                selectedCluster
+                ];
+        if (!cluster) {
+            document.getElementById(
+                "dashboard"
+            ).innerHTML = `
+                <div class="error-box">
+                    <h2>
+                        Cluster not found
+                    </h2>
+                </div>
+            `;
+            return;
+        }
+        renderSingleCluster(
+            cluster
+        );
+    }
+
+    function renderAllClusters(
+        clusters
+    ) {
+        const clusterNames =
+            Object.keys(
+                clusters
+            );
+        let totalNodes = 0;
+        let totalVCPU = 0;
+        let totalMemory = 0;
+        let totalPods = 0;
+
+        clusterNames.forEach(
+            clusterName => {
+                const cluster =
+                    clusters[
+                        clusterName
+                        ];
+                const nodes =
+                    cluster.nodes || {};
+                const nodeCount =
+                    Number(
+                        nodes.node_count || 0
+                    );
+                const vCPU =
+                    Number(
+                        nodes.vCPU || 0
+                    );
+                const memory =
+                    Number(
+                        nodes.memory || 0
+                    );
+                totalNodes +=
+                    nodeCount;
+                totalVCPU +=
+                    nodeCount * vCPU;
+                totalMemory +=
+                    nodeCount * memory;
+                const pods =
+                    cluster.pods || {};
+                totalPods +=
+                    Number(
+                        pods.total_pod_count || 0
+                    );
+            }
+        );
+
+        let html = `
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <div class="summary-title">
+                        Total Clusters
+                    </div>
+                    <div class="summary-value">
+                        ${clusterNames.length}
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-title">
+                        Total Nodes
+                    </div>
+                    <div class="summary-value">
+                        ${totalNodes}
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-title">
+                        Total vCPU
+                    </div>
+                    <div class="summary-value">
+                        ${totalVCPU}
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-title">
+                        Total Memory
+                    </div>
+                    <div class="summary-value">
+                        ${totalMemory} GB
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-title">
+                        Total Pods
+                    </div>
+                    <div class="summary-value">
+                        ${totalPods}
+                    </div>
+                </div>
+            </div>
+            <div class="section-title">
+                All AKS Clusters
+            </div>
+
+        `;
+
+        /* -------------- CLUSTER CARDS --------- */
+        clusterNames.forEach(
+            clusterName => {
+                html +=
+                    createClusterCard(
+                        clusterName,
+                        clusters[
+                            clusterName
+                            ]
+                    );
+            }
+        );
+        document.getElementById(
+            "dashboard"
+        ).innerHTML =
+            html;
+
+    }
+
+    /* --------- render single cluster ----------- */
+    function renderSingleCluster(
+        cluster
+    ) {
+        const nodes =
+            cluster.nodes || {};
+        const nodeCount =
+            Number(
+                nodes.node_count || 0
+            );
+        const vCPU =
+            Number(
+                nodes.vCPU || 0
+            );
+        const memory =
+            Number(
+                nodes.memory || 0
+            );
+        const totalVCPU =
+            nodeCount * vCPU;
+        const totalMemory =
+            nodeCount * memory;
+        const pods =
+            cluster.pods || {};
+        const totalPods =
+            Number(
+                pods.total_pod_count || 0
+            );
+
+        let html = `
+            <div class="summary-grid single-cluster-summary">
+                <div class="summary-card">
+                    <div class="summary-title">
+                        Node Count
+                    </div>
+                    <div class="summary-value">
+                        ${nodeCount}
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-title">
+                        Total vCPU
+                    </div>
+                    <div class="summary-value">
+                        ${totalVCPU}
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-title">
+                        Total Memory
+                    </div>
+                    <div class="summary-value">
+                        ${totalMemory} GB
+                    </div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-title">
+                        Total Pods
+                    </div>
+                    <div class="summary-value">
+                        ${totalPods}
+                    </div>
+                </div>
+            </div>
+            <!----- node info ----->
+            <div class="section-title">
+                Node Information
+            </div>
+            <div class="node-grid">
+                <div class="node-card">
+                    <div class="node-label">
+                        Node Type
+                    </div>
+                    <div class="node-value">
+                        ${nodes.node_type || "Unknown"}
+                    </div>
+                </div>
+                <div class="node-card">
+                    <div class="node-label">
+                        Node Count
+                    </div>
+                    <div class="node-value">
+                        ${nodeCount}
+                    </div>
+                </div>
+                <div class="node-card">
+                    <div class="node-label">
+                        vCPU / Node
+                    </div>
+                    <div class="node-value">
+                        ${vCPU}
+                    </div>
+                </div>
+                <div class="node-card">
+                    <div class="node-label">
+                        Memory / Node
+                    </div>
+                    <div class="node-value">
+                        ${memory} GB
+                    </div>
+                </div>
+            </div>
+            <!--------- workloads ------>
+            <div class="section-title">
+                Services / Workloads
+            </div>
+            ${createWorkloadTable(cluster)}
+        `;
+        document.getElementById(
+            "dashboard"
+        ).innerHTML =
+            html;
+    }
+
+    /* -------- create cluster cards only for All Clusters -------- */
+    function createClusterCard(
+        clusterName,
+        cluster
+    ) {
+        const nodes =
+            cluster.nodes || {};
+        const nodeCount =
+            Number(
+                nodes.node_count || 0
+            );
+        const vCPU =
+            Number(
+                nodes.vCPU || 0
+            );
+        const memory =
+            Number(
+                nodes.memory || 0
+            );
+        const totalVCPU =
+            nodeCount * vCPU;
+        const totalMemory =
+            nodeCount * memory;
+        const pods =
+            cluster.pods || {};
+        const totalPods =
+            Number(
+                pods.total_pod_count || 0
+            );
+        return `
+            <div class="cluster-card">
+                <div class="cluster-header">
+                    <div>
+                        <h2>
+                            ${clusterName}
+                        </h2>
+                    </div>
+                    <span class="status-badge success">
+                        Available
+                    </span>
+                </div>
+                <!-- node info -->
+                <div class="node-grid">
+                    <div class="node-card">
+                        <div class="node-label">
+                            Node Type
+                        </div>
+                        <div class="node-value">
+                            ${nodes.node_type || "Unknown"}
+                        </div>
+                    </div>
+                    <div class="node-card">
+                        <div class="node-label">
+                            Node Count
+                        </div>
+                        <div class="node-value">
+                            ${nodeCount}
+                        </div>
+                    </div>
+                    <div class="node-card">
+                        <div class="node-label">
+                            vCPU / Node
+                        </div>
+                        <div class="node-value">
+                            ${vCPU}
+                        </div>
+                    </div>
+                    <div class="node-card">
+                        <div class="node-label">
+                            Memory / Node
+                        </div>
+                        <div class="node-value">
+                            ${memory} GB
+                        </div>
+                    </div>
+                    <div class="node-card">
+                        <div class="node-label">
+                            Total vCPU
+                        </div>
+                        <div class="node-value">
+                            ${totalVCPU}
+                        </div>
+                    </div>
+                    <div class="node-card">
+                        <div class="node-label">
+                            Total Memory
+                        </div>
+                        <div class="node-value">
+                            ${totalMemory} GB
+                        </div>
+                    </div>
+                    <div class="node-card">
+                        <div class="node-label">
+                            Total Pods
+                        </div>
+                        <div class="node-value">
+                            ${totalPods}
+                        </div>
+                    </div>
+                </div>
+                <!-- workloads -->
+                <div class="workload-title">
+                    Services / Workloads
+                </div>
+                ${createWorkloadTable(
+            cluster
+        )}
+            </div>
+        `;
+    }
+
+    /* --------- create workload table ------ */
+    function createWorkloadTable(
+        cluster
+    ) {
+        const pods =
+            cluster.pods || {};
+        const workloads =
+            pods.deployed || [];
+        if (
+            workloads.length === 0
+        ) {
+            return `
+                <div class="no-workloads">
+                    No workloads found.
+                </div>
+            `;
+        }
+        let html = `
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>
+                                Service / Workload
+                            </th>
+                            <th>
+                                Namespace
+                            </th>
+                            <th>
+                                Pod Count
+                            </th>
+                            <th>
+                                Status
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        workloads.forEach(
+            workload => {
+                const podCount =
+                    Number(
+                        workload.pod_count || 0
+                    );
+                html += `
+                    <tr>
+                        <td>
+                            <strong>
+                                ${workload.name || "-"}
+                            </strong>
+                        </td>
+                        <td>
+                            ${workload.namespace || "-"}
+                        </td>
+                        <td>
+                            ${podCount}
+                        </td>
+                        <td>
+                            ${
+                    podCount > 0
+                        ?
+                        `
+                                <span class="status-healthy">
+                                    Healthy
+                                </span>
+                                `
+                        :
+                        `
+                                <span class="status-warning">
+                                    No Pods
+                                </span>
+                                `
+                }
+                        </td>
+                    </tr>
+                `;
+            }
+        );
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        return html;
+    }
+    loadDashboard();
+    setInterval(
+        loadDashboard,
+        5 * 60 * 1000
+    );
+</script>
+</body>
+</html>
