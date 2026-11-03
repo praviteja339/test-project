@@ -1,0 +1,31 @@
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+
+pr: none
+
+variables:
+  - group: TEST - Prod
+
+jobs:
+  - job: SRE_Infra_Build
+    pool:
+      vmImage: 'ubuntu-22.04'
+    container:
+      image: "test.azurecr.io/devops/infra-build:$(infra_build_tag_version)"
+      endpoint: 'TEST Docker Registry'
+
+    steps:
+      - task: Bash@3
+        name: infradeploy
+        displayName: 'Run Ansible - SRE Infrastructure Build'
+        env:
+          service_principal_id: "$(service_principal_id)"
+          service_principal_secret: "$(service_principal_secret)"
+          subscription_id: "$(subscription_id)"
+          tenant_id: "$(tenant_id)"
+          source_dir: "$(Build.SourcesDirectory)"
+        inputs:
+          targetType: 'inline'
+          script: |
+            ansible-playbook ansible/build.yaml -i "localhost, "
