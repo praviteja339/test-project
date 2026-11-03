@@ -1,0 +1,69 @@
+- name: Continuous Integration
+  hosts: localhost
+  connection: local
+
+  tasks:
+
+  - set_fact:
+      git_username: "{{ lookup('env', 'git_username') }}"
+      git_password: "{{ lookup('env', 'git_password') }}"
+      config_repo: "{{ lookup('env', 'config_repo') }}"
+      service_principal_id: "{{ lookup('env', 'service_principal_id') }}"
+      service_principal_secret: "{{ lookup('env', 'service_principal_secret') }}"
+      subscription_id: "{{ lookup('env', 'subscription_id') }}"
+      tenant_id: "{{ lookup('env', 'tenant_id') }}"
+      source_dir: "{{ lookup('env', 'source_dir') }}"
+      env_dir: "{{ lookup('env', 'env_dir') }}"
+      service: "{{ lookup('env', 'service') }}"
+
+  - name: Login to Azure using Service Principal {{ service_principal_id }}
+    command: >
+      az login
+      --service-principal
+      --username '{{ service_principal_id }}'
+      --password '{{ service_principal_secret }}'
+      --tenant '{{ tenant_id }}'
+
+  - name: Set subscription {{ subscription_id }} to be current and active
+    command: az account set --subscription {{ subscription_id }}
+
+  - name: Git pull repo - {{ config_repo }}
+    git:
+      repo: 'https://{{ git_username }}:{{ git_password }}@{{ config_repo }}'
+      dest: "{{ env_dir }}"
+
+  - name: Decrypt shared config file
+    shell: sops --decrypt {{ env_dir }}/shared/shared_config.enc.yaml > {{ env_dir }}/shared/shared_config.yaml
+    no_log: true
+
+  - name: Include shared config file
+    include_vars:
+      file: "{{ env_dir }}/shared/shared_config.yaml"
+    no_log: true
+
+  - name: Include {{ service }} config file
+    include_vars:
+      file: "{{ source_dir }}/{{ service }}_build_config.yaml"
+
+  - name: Login to ACR ({{ docker_registry }})
+    shell: echo "{{ service_principal_secret }}" | docker login {{ docker_registry }} --username "{{ service_principal_id }}" --password-stdin
+
+  - name: Build {{ service }} Docker Image on Build Agent
+    command: docker build . -t tmp -f {{ source_dir }}/{{ service_name }}/Dockerfile --build-arg AZDO_PAT={{ azdo_pat }}
+    args:
+      chdir: "{{ source_dir }}"
+
+  - name: Tag {{ service }} Docker Image on Build Agent
+    command: docker tag tmp {{ docker_registry }}/{{ service_name }}:{{ item }}
+    loop:
+      - "{{ version }}"
+
+  - name: Push Docker Image to ACR
+    command: docker push {{ docker_registry }}/{{ service_name }}:{{ item }}
+    loop:
+      - "{{ version }}"
+
+  - name: Validate ACR has {{ service_name }} Docker Image
+    command: az acr repository show --name {{ acr_name }} --image {{ service_name }}:{{ item }}
+    loop:
+      - "{{ version }}"

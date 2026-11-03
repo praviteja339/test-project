@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keyvault-monitor-secrets
+  namespace: tools
+  labels:
+    app: keyvault-monitor
+type: Opaque
+stringData:
+  # Replace these with real values from Azure AD
+  AZURE_TENANT_ID: "{{ tenant_id }}"
+  AZURE_CLIENT_ID: "{{ service_principal_id }}"
+  AZURE_CLIENT_SECRET: "{{ service_principal_secret }}"
+  AZURE_DEVOPS_ORG: "https://dev.azure.com/test-project/"
+  APP_PROJECT: "elephant"
+  SSL_PROJECT: "DevOps"
+  SSL_CERT_PIPELINE: "ssl-cert"
+  EMAIL_FROM: "hi@test.com"
+  EMAIL_TO: "test@test.com"
+  PIPELINE_NAME: "test-sre-infra"
+  AZURE_STORAGE_ACCOUNT_NAME: "{{ storage_account_name }}"
+  AZURE_STORAGE_ACCOUNT_KEY: "{{ storage_account_key }}"
+  AZURE_FILE_SHARE: "devops-shared"
+  AZDO_PAT: "{{ azdo_pat }}"
+  GraphClientId: "{{ GraphClientId }}"
+  GraphClientSecret: "{{ GraphClientSecret }}"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: keyvault-monitor
+  namespace: tools
+  labels:
+    app: keyvault-monitor
+spec:
+  schedule: "30 0 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 3600
+      ttlSecondsAfterFinished: 100
+      template:
+        metadata:
+          labels:
+            app: keyvault-monitor
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: keyvault-monitor
+              image: test.azurecr.io/keyvalut-monitor:{{ version }}
+              imagePullPolicy: IfNotPresent
+              envFrom:
+                - secretRef:
+                    name: keyvault-monitor-secrets

@@ -1,0 +1,36 @@
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+
+pr: none
+
+variables:
+  - group: TEST - HI
+
+jobs:
+   - job: Helloworld
+     pool:
+       vmImage: 'ubuntu-22.04'
+     container:
+       image: "test.azurecr.io/devops/services-build:2.0.7-testing-java17"
+       mapDockerSocket: true
+       endpoint: 'TEST Docker Registry'
+
+     steps:
+          - task: Bash@3
+            displayName: 'Run Ansible - Helloworld'
+            env:
+              git_username: "$(git_username)"
+              git_password: "$(git_password)"
+              config_repo: "$(config_repo)"
+              service_principal_id: "$(service_principal_id)"
+              service_principal_secret: "$(service_principal_secret)"
+              subscription_id: "$(subscription_id)"
+              tenant_id: "$(tenant_id)"
+              source_dir: "$(Build.SourcesDirectory)"
+              env_dir: "$(Agent.BuildDirectory)/env"
+              HELM_EXPERIMENTAL_OCI: 1
+            inputs:
+              targetType: 'inline'
+              script: |
+                ansible-playbook cicd/deploy.yaml -i "localhost, " -v

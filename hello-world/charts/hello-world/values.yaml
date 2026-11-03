@@ -1,0 +1,19 @@
+replicaCount: 2
+
+image:
+  repository: test.azurecr.io/hello-world
+  tag: "3"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 3648
+  targetPort: 3648
+
+container:
+  port: 3648
+
+namespace: hello-world

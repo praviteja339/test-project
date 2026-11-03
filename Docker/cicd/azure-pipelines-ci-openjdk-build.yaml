@@ -1,0 +1,41 @@
+name: $(Date:yyyyMMdd)$(Rev:.r)-$(Build.SourceBranchName)
+
+trigger: none
+
+pr: none
+
+variables:
+  - group: TEST - Dev
+
+jobs:
+  - job: Services_CI_Build
+    pool:
+      vmImage: 'ubuntu-22.04'
+    container:
+      image: test.azurecr.io/devops/services-build:$(services_build_tag_version)
+      mapDockerSocket: true
+      endpoint: 'TEST Docker Registry'
+
+    steps:
+      - task: Bash@3
+        displayName: 'Run Ansible - Services_CI Build'
+        env:
+          git_username: "$(git_username)"
+          git_password: "$(git_password)"
+          config_repo: "$(config_repo)"
+          service_principal_id: "$(service_principal_id)"
+          service_principal_secret: "$(service_principal_secret)"
+          subscription_id: "$(subscription_id)"
+          tenant_id: "$(tenant_id)"
+          source_dir: "$(Build.SourcesDirectory)"
+          env_dir: "$(Agent.BuildDirectory)/env"
+          service: services
+          config_env: "$(config_env)"
+          config_storage_account_name: "$(config_storage_account_name)"
+          config_storage_account_key: "$(config_storage_account_key)"
+          config_storage_container_name: "$(config_storage_container_name)"
+          HELM_EXPERIMENTAL_OCI: 1
+        inputs:
+          targetType: 'inline'
+          script: |
+            ansible-playbook cicd/ansible/ci.yaml -i "localhost, " -v

@@ -1,0 +1,64 @@
+- name: Deploy database Docker image to ACR -- locally #TODO move to pipeline (needs versioning)
+  hosts: localhost
+  connection: local
+
+  tasks:
+
+#Update this as appropriate when running locally
+  - set_fact:
+      config_dir: "../../../test-config-dev"
+      config_files: []
+      version: 1.1.0
+      docker_image: devops/services-build
+
+#  - name: Run decrypt.yaml playbook (get master)
+#    command: ansible-playbook {{ config_dir }}/decrypt.yaml -i "localhost, "
+
+  - name: Get all Decrypted .yaml files
+    find:
+      paths: "{{ config_dir }}"
+      patterns: "*.yaml"
+      recurse: yes
+      excludes: "*.enc.yaml,decrypt.yaml,encrypt_all.yaml,encrypt_file.yaml"
+    register: files
+
+  - name: Add Decrypted files to Array
+    set_fact:
+      config_files: "{{ config_files + [item.path] }}"
+    loop: "{{ files.files }}"
+    no_log: true
+
+  - name: Include config files
+    include_vars:
+      file: "{{ item }}"
+    no_log: true
+    loop: "{{ config_files }}"
+
+  - name: Login to Azure using Service Principal {{ service_principal_id }}
+    command: >
+      az login
+      --service-principal
+      --username '{{ service_principal_id }}'
+      --password '{{ service_principal_secret }}'
+      --tenant '{{ tenant_id }}'
+
+  - name: Set subscription {{ subscription_id }} to be current and active
+    command: az account set --subscription {{ subscription_id }}
+
+  - name: Login to ACR
+    shell: echo "{{ service_principal_secret }}" | docker login {{ docker_registry }} --username "{{ service_principal_id }}" --password-stdin
+
+  - name: Build Docker Image
+    command: docker build . -t {{ docker_registry }}/{{ docker_image }}:{{ item }}
+    args:
+      chdir: "../../{{ docker_image }}"
+    loop:
+      - latest
+      - "{{ version }}"
+
+  - name: Push Docker Image to ACR
+    command: docker push {{ docker_registry }}/{{ docker_image }}:{{ item }}
+    loop:
+      - latest
+      - "{{ version }}"
+just ignore this#

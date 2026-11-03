@@ -1,0 +1,94 @@
+- name: Continuous Integration
+  hosts: localhost
+  connection: local
+
+  tasks:
+
+    - set_fact:
+        git_username: "{{ lookup('env', 'git_username') }}"
+        git_password: "{{ lookup('env', 'git_password') }}"
+        config_repo: "{{ lookup('env', 'config_repo') }}"
+        service_principal_id: "{{ lookup('env', 'service_principal_id') }}"
+        service_principal_secret: "{{ lookup('env', 'service_principal_secret') }}"
+        subscription_id: "{{ lookup('env', 'subscription_id') }}"
+        tenant_id: "{{ lookup('env', 'tenant_id') }}"
+        source_dir: "{{ lookup('env', 'source_dir') }}"
+        env_dir: "{{ lookup('env', 'env_dir') }}"
+        storage_account_name: "{{ lookup('env', 'storage_account_name') }}"
+        storage_account_key: "{{ lookup('env', 'storage_account_key') }}"
+        azdo_pat: "{{ lookup('env', 'azdo_pat') }}"
+        GraphClientId: "{{ lookup('env', 'GraphClientId') }}"
+        GraphClientSecret: "{{ lookup('env', 'GraphClientSecret') }}"
+        config_env: "{{ lookup('env', 'config_env') }}"
+        config_storage_account_name: "{{ lookup('env', 'config_storage_account_name') }}"
+        config_storage_account_key: "{{ lookup('env', 'config_storage_account_key') }}"
+        config_storage_container_name: "{{ lookup('env', 'config_storage_container_name') }}"
+
+    - name: Login to Azure using Service Principal {{ service_principal_id }}
+      command: >
+        az login
+        --service-principal
+        --username '{{ service_principal_id }}'
+        --password '{{ service_principal_secret }}'
+        --tenant '{{ tenant_id }}'
+
+    - name: Set subscription {{ subscription_id }} to be current and active
+      command: az account set --subscription {{ subscription_id }}
+
+    - name: Download config files from Azure Blob Storage
+      shell: >
+        az storage blob download-batch
+        --account-name "{{ config_storage_account_name }}"
+        --account-key "{{ config_storage_account_key }}"
+        --source "{{ config_storage_container_name }}"
+        --destination "{{ source_dir }}"
+        --pattern "{{ config_env }}/*"
+
+    - name: Decrypt shared config file
+      shell: >
+        sops -d --input-type yaml --output-type yaml
+        {{ source_dir }}/{{ config_env }}/shared/shared_config.yaml.enc
+        > {{ source_dir }}/{{ config_env }}/shared/shared_config.yaml
+      no_log: true
+
+    - name: Include shared config file
+      include_vars:
+        file: "{{ source_dir }}/{{ config_env }}/shared/shared_config.yaml"
+      no_log: true
+
+    - name: Login to ACR ({{ docker_registry }})
+      shell: echo "{{ service_principal_secret }}" | docker login {{ docker_registry }} --username "{{ service_principal_id }}" --password-stdin
+
+    - name: Read version.yaml
+      include_vars:
+        file: "{{ source_dir }}/automate-sslcert-update/version.yaml"
+        name: version_data
+
+    - name: Set version fact
+      set_fact:
+        version: "{{ version_data.version }}"
+
+    - name: Display version
+      debug:
+        msg: "Using version: {{ version }}"
+
+    - name: Build Docker Image on Build Agent
+      command: docker build -t {{ docker_registry }}/keyvalut-monitor:{{ version }} .
+      args:
+        chdir: "{{ source_dir }}/automate-sslcert-update"
+
+    - name: Push Docker Image to ACR
+      command: docker push {{ docker_registry }}/keyvalut-monitor:{{ version }}
+
+    - name: Pull AKS cluster config
+      command: az aks get-credentials --resource-group "{{ resource_group_name }}" --name {{ aks_name }} --admin
+
+    - name: Render Kubernetes manifests with env values
+      template:
+        src: keyvault-monitor-cronjob.yaml.j2
+        dest: "{{ source_dir }}/automate-sslcert-update/cicd/ansible/keyvault-monitor-cronjob.yaml"
+
+    - name: Apply Kubernetes cronjob
+      command: kubectl apply -f cicd/ansible/keyvault-monitor-cronjob.yaml
+      args:
+        chdir: "{{ source_dir }}/automate-sslcert-update"
