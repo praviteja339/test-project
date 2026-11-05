@@ -1,0 +1,9 @@
+#Reader role - can get/list/watch resources specified below
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: cluster-monitor
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "deployments", "configmaps", "services", "ingresses"]
+  verbs: ["get", "list", "watch"]
