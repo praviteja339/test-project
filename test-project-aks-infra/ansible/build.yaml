@@ -1,0 +1,273 @@
+#build.yaml#
+- name: Deploy AKS Infrastructure
+  hosts: localhost
+  connection: local
+
+  tasks:
+
+  - set_fact:
+      git_username: "{{ lookup('env', 'git_username') }}"
+      git_password: "{{ lookup('env', 'git_password') }}"
+      config_repo: "{{ lookup('env', 'config_repo') }}"
+      config_env: "{{ lookup('env', 'config_env') }}"
+      config_storage_account_name: "{{ lookup('env', 'config_storage_account_name') }}"
+      config_storage_account_key: "{{ lookup('env', 'config_storage_account_key') }}"
+      config_storage_container_name: "{{ lookup('env', 'config_storage_container_name') }}"
+      service_principal_id: "{{ lookup('env', 'service_principal_id') }}"
+      service_principal_secret: "{{ lookup('env', 'service_principal_secret') }}"
+      subscription_id: "{{ lookup('env', 'subscription_id') }}"
+      tenant_id: "{{ lookup('env', 'tenant_id') }}"
+      source_dir: "{{ lookup('env', 'source_dir') }}"
+      env_dir: "{{ lookup('env', 'env_dir') }}"
+      Upgrade: "{{ lookup('env', 'Upgrade') }}"
+
+
+  - name: Login to Azure using Service Principal {{ service_principal_id }}
+    command: >
+      az login
+      --service-principal
+      --username '{{ service_principal_id }}'
+      --password '{{ service_principal_secret }}'
+      --tenant '{{ tenant_id }}'
+
+  - name: Set subscription {{ subscription_id }} to be current and active
+    command: az account set --subscription {{ subscription_id }}
+
+  - name: Login to helm registry
+    shell: >
+      echo "{{ service_principal_secret }}" | helm registry login test.azurecr.io --username "{{ service_principal_id }}" --password-stdin
+
+#  - name: Git pull repo - {{ config_repo }}
+#    git:
+#      repo: 'https://{{ git_username }}:{{ git_password }}@{{ config_repo }}'
+#      dest: "{{ env_dir }}"
+#      version: "feature/configs"
+
+#  - name: Decrypt shared config file
+#    shell: sops --decrypt {{ env_dir }}/shared/shared_config.enc.yaml > {{ env_dir }}/shared/shared_config.yaml
+#    no_log: false
+
+#  - name: Include shared config file
+#    include_vars:
+#      file: "{{ env_dir }}/shared/shared_config.yaml"
+#    no_log: true
+
+#  - name: Decrypt infra config file
+#    shell: sops --decrypt {{ env_dir }}/infra/infra_config.enc.yaml > {{ env_dir }}/infra/infra_config.yaml
+#    no_log: true
+
+#  - name: Include infra config file
+#    include_vars:
+#      file: "{{ env_dir }}/infra/infra_config.yaml"
+#    no_log: true
+
+  # Download Config Files From Azure Blob Storage
+  - name: Download config files from Azure blob storage
+    shell: |
+      CONFIG_ENV="{{ config_env }}"
+      DEST_DIR="{{ lookup('env', 'AGENT_BUILDDIRECTORY') }}/env"
+      
+      rm -rf "$DEST_DIR"
+      mkdir -p "$DEST_DIR"
+      
+      az storage blob download-batch \
+        --account-name "{{ config_storage_account_name }}" \
+        --account-key "{{ config_storage_account_key }}" \
+        --source "{{ config_storage_container_name }}" \
+        --destination "$DEST_DIR" \
+        --pattern "${CONFIG_ENV}/*"
+      
+      cp -r "$DEST_DIR/$CONFIG_ENV"/* "$DEST_DIR/"
+      rm -rf "$DEST_DIR/$CONFIG_ENV"
+    args:
+      executable: /bin/bash
+
+  #Decrypt & Include Shared Config File
+  - name: Decrypt shared config
+    shell: |
+      set -euo pipefail
+      ENC_FILE="{{ lookup('env', 'AGENT_BUILDDIRECTORY') }}/env/shared/shared_config.yaml.enc"
+      DEC_FILE="{{ lookup('env', 'AGENT_BUILDDIRECTORY') }}/env/shared/shared_config.yaml"
+      sops -d --input-type yaml --output-type yaml "$ENC_FILE" > "$DEC_FILE"
+      if [ ! -s "$DEC_FILE" ]; then
+        echo "Decryption failed"
+        exit 1
+      fi
+    args:
+      executable: /bin/bash
+
+  - name: Include shared config
+    include_vars:
+      file: "{{ lookup('env', 'AGENT_BUILDDIRECTORY') }}/env/shared/shared_config.yaml"
+    no_log: true
+
+  # Decrypt & Include infra Config File
+  - name: Decrypt infra config
+    shell: |
+      set -euo pipefail
+      ENC_FILE="{{ lookup('env', 'AGENT_BUILDDIRECTORY') }}/env/infra/infra_config.yaml.enc"
+      DEC_FILE="{{ lookup('env', 'AGENT_BUILDDIRECTORY') }}/env/infra/infra_config.yaml"
+      sops -d --input-type yaml --output-type yaml "$ENC_FILE" > "$DEC_FILE"
+      if [ ! -s "$DEC_FILE" ]; then
+        echo "Decryption failed"
+        exit 1
+      fi
+    args:
+      executable: /bin/bash
+
+  - name: Include infra config
+    include_vars:
+      file: "{{ lookup('env', 'AGENT_BUILDDIRECTORY') }}/env/infra/infra_config.yaml"
+    no_log: true
+
+###################
+# TERRAFORM
+###################
+
+  - name: Inject Terraform vars
+    template:
+      src: "{{ source_dir }}/terraform/terraform.tfvars.j2"
+      dest: "{{ source_dir }}/terraform/terraform.tfvars"
+
+  - name: Update Policy Parameter Effect with deny / audit
+    template:
+      src: "{{ source_dir }}/terraform/policies/{{ item }}/parameters.json.j2"
+      dest: "{{ source_dir }}/terraform/policies/{{ item }}/parameters.json"
+    loop:
+      - privilege_escalation
+      - privileged_containers
+      - user_group_assignment
+
+  - name: Terraform Init
+    command: >
+      terraform init 
+      -backend-config="storage_account_name={{ tf_state_store_name }}"
+      -backend-config="container_name={{ tf_state_store_container_name }}"
+      -backend-config="key={{ tf_state_store_file_name }}"
+      -backend-config="access_key={{ tf_state_store_key }}"
+    args:
+      chdir: "{{ source_dir }}/terraform/"
+
+  - name: Check if nginx ingress already imported
+    command: terraform state show helm_release.nginx_ingress
+    args:
+      chdir: "{{ source_dir }}/terraform/"
+    register: nginx_ingress_state
+    failed_when: false
+    changed_when: false
+
+  - name: Import existing nginx ingress helm release
+    command: >
+      terraform import
+      helm_release.nginx_ingress
+      kube-system/platform
+    args:
+      chdir: "{{ source_dir }}/terraform/"
+    when: nginx_ingress_state.rc != 0
+
+  - name: Check if test dragon already imported
+    command: terraform state show helm_release.nginx_dragon[0]
+    args:
+      chdir: "{{ source_dir }}/terraform/"
+    register: nginx_dragon_state
+    failed_when: false
+    changed_when: false
+
+  - name: Import existing test dragon helm release
+    command: >
+      terraform import
+      helm_release.nginx_dragon[0]
+      dragon/nginx-dragon
+    args:
+      chdir: "{{ source_dir }}/terraform/"
+    when:
+      - nginx_dragon_state.rc != 0
+      - env | lower in ['dev', 'qa']
+
+  - name: Run Terraform Apply
+    terraform:
+      project_path: "{{ source_dir }}/terraform/"
+      state: present
+      force_init: true
+      lock: true
+      backend_config:
+        access_key: "{{ tf_state_store_key }}"
+        storage_account_name: "{{ tf_state_store_name }}"
+        container_name: "{{ tf_state_store_container_name }}"
+        key: "{{ tf_state_store_file_name }}"
+    register: terraform
+    no_log: false
+
+# Starts Compliance scan, takes up to 30 minutes to run
+  - name: Start Azure Policy On-demand evaluation scan
+    command: az policy state trigger-scan --resource-group {{ resource_group_name }} --no-wait
+
+
+# ###################
+# # AKS CONFIGURATION
+# ###################
+
+  - name: Convert RBAC templates to usable files
+    template:
+       src: aks_rbac/templates/{{ item }}.j2
+       dest: aks_rbac/{{ item }}
+       group: "{{ ansible_user_gid }}"
+       owner: "{{ ansible_user_id }}"
+       mode: 0444
+    loop:
+       - cluster-admin-rolebinding.yaml
+       - cluster-deployer-rolebinding.yaml
+       - cluster-monitor-rolebinding.yaml
+       - cluster-provisioner-rolebinding.yaml
+
+  - name: Connect to AKS cluster
+    command: az aks get-credentials --resource-group {{ terraform.outputs.resource_group.value }} -n {{ terraform.outputs.cluster_name.value }} --admin --overwrite-existing
+
+  - name: Apply RBAC settings to AKS
+    command: kubectl apply -f {{ item }}
+    with_fileglob:
+       - "aks_rbac/*.yaml"
+
+  - name: Add Helm Repos
+    shell: >
+       helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx &&
+       helm repo add appscode https://charts.appscode.com/stable/ &&
+       helm repo add bitnami https://charts.bitnami.com/bitnami &&
+       helm repo add kubereboot https://kubereboot.github.io/charts/ &&
+       az acr helm repo add --name test
+
+  - name: Update Helm Repos
+    command: helm repo update
+
+  - name: Update/install Kured
+    command: helm upgrade kured kubereboot/kured -n kube-system --set nodeSelector."beta\.kubernetes\.io/os"=linux  --install # removed version as it doesn't packaged
+
+#  - name: Update/install Kubed (for secrets sync)
+#    command: helm upgrade kubed appscode/kubed -n kube-system --set config.clusterName="{{ aks_name }}" --version 0.13.2 --install # hardcoded version here to test
+
+  - name: Patch default service account in kube-system
+    command: "kubectl patch serviceaccount default -n kube-system -p 'imagePullSecrets:\n - name: {{ docker_repo_secret }}'"
+    register: kubectl_patch
+    until: kubectl_patch.rc == 0
+    retries: 3
+    delay: 30
+
+  - name: Check AKS for "Tools" Namespace
+    command: kubectl get namespace tools --ignore-not-found
+    register: namespace_exists
+
+  - name: Create AKS Namespace tools
+    command: kubectl create namespace tools
+    when: namespace_exists.stdout == ''  
+    
+  - name: Update/install Redis
+    command: >
+       helm upgrade redis bitnami/redis -n tools
+       --set-string global.redis.password={{ redis_password }}
+       --set architecture=replication
+       --set replica.replicaCount={{ redis_node_count }}
+       --set image.tag=latest
+       --install
+    no_log: true
+
+- import_playbook: validate.yaml
