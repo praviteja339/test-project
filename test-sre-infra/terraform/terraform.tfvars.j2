@@ -1,0 +1,55 @@
+tags = {
+    environment = "{{ env | lower }}"
+    owner = "test-devops"
+    "deployment model" = "terraform"
+    "created on date" = "{{ '%Y-%m-%d' | strftime(ansible_date_time.epoch | int ) }}"
+}
+
+env = "{{ env }}"
+location = "{{ location }}"
+country = "{{ country }}"
+region = "{{ region }}"
+subscription_id = "{{ subscription_id }}"
+service_principal_id = "{{ service_principal_id }}"
+service_principal_secret = "{{ service_principal_secret }}"
+tenant_id = "{{ tenant_id }}"
+resource_group_name = "{{ resource_group_name }}"
+
+ag_name = "{{ ag_name }}"
+ag_subnet_name = "{{ ag_subnet_name }}"
+ag_subnet_cidr = "{{ ag_subnet_cidr }}"
+ag_waf_fw_mode = "{{ ag_waf_fw_mode }}"
+ag_rule_set_ver = "{{ ag_rule_set_ver }}"
+backend_http_request_timeout = "{{ backend_http_request_timeout }}"
+hi_backend_http_request_timeout = "{{ hi_backend_http_request_timeout }}"
+
+firewall_name = "{{ firewall_name }}"
+firewall_subnet_cidr = "{{ firewall_subnet_cidr }}"
+nat_rule_collection_name = "{{ nat_rule_collection_name }}"
+
+firewall_ip = "{{ firewall_ip }}"
+ag_private_ip = "{{ ag_private_ip }}"
+sre_vnet_name = "{{ sre_vnet_name }}"
+sre_vnet_cidr = "{{ sre_vnet_cidr }}"
+sre_to_prod_peer_name = "{{ sre_to_prod_peer_name }}"
+sre_to_uat_peer_name = "{{ sre_to_uat_peer_name }}"
+sre_to_ca_peer_name  = "{{ sre_to_ca_peer_name}}"
+sre_to_staging_peer_name = "{{ sre_to_staging_peer_name }}"
+
+prod_peer_to_sre_name = "{{ prod_peer_to_sre_name }}"
+uat_peer_to_sre_name = "{{ uat_peer_to_sre_name }}"
+ca_peer_to_sre_name = "{{ ca_peer_to_sre_name }}"
+staging_peer_to_sre_name = "{{ staging_peer_to_sre_name }}"
+
+prod_aks_load_balancer_ip = "{{ prod_aks_load_balancer_ip }}"
+uat_aks_load_balancer_ip = "{{ uat_aks_load_balancer_ip }}"
+hi_aks_load_balancer_ip = "{{ cm_aks_load_balancer_ip }}"
+helo_aks_load_balancer_ip = "{{ ca_aks_load_balancer_ip }}"
+staging_aks_load_balancer_ip = "{{ staging_aks_load_balancer_ip }}"
+test_aks_load_balancer_ip = "{{ cit_aks_load_balancer_ip }}"
+hihi_aks_load_balancer_ip = "{{ aie_aks_load_balancer_ip }}"
+
+cr_test_uat_cert_name = "{{ care_nav_uat_cert_name }}"
+portal_uat_cert_name = "{{ portal_uat_cert_name }}"
+
+sre_network_security_group_name = "{{ sre_network_security_group_name }}"
