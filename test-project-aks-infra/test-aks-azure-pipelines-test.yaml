@@ -1,0 +1,48 @@
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+
+pr: none
+
+variables:
+  - group: TEST - STAGE
+  - group: TEST - Constants
+
+parameters:
+  - name: Upgrade
+    displayName: Redis upgrade
+    type: boolean
+    default: true
+
+jobs:
+  - job: AKS_Infra_Build
+    pool:
+      vmImage: 'ubuntu-22.04'
+    container:
+      image: "test.azurecr.io/devops/infra-build:2.0.4"
+      endpoint: 'TEST Docker Registry'
+
+    steps:
+      - task: Bash@3
+        name: infradeploy
+        displayName: 'Run Ansible - Infrastructure Build'
+        env:
+          git_username: "$(git_username)"
+          git_password: "$(git_password)"
+          config_repo: "$(config_repo)"
+          config_env: "$(config_env)"
+          config_storage_account_name: "$(config_storage_account_name)"
+          config_storage_account_key: "$(config_storage_account_key)"
+          config_storage_container_name: "$(config_storage_container_name)"
+          service_principal_id: "$(service_principal_id)"
+          service_principal_secret: "$(service_principal_secret)"
+          subscription_id: "$(subscription_id)"
+          tenant_id: "$(tenant_id)"
+          source_dir: "$(Build.SourcesDirectory)"
+          env_dir: "$(Agent.BuildDirectory)/env"
+          Upgrade: "${{ parameters.Upgrade }}"
+          HELM_EXPERIMENTAL_OCI: 1
+        inputs:
+          targetType: 'inline'
+          script: |
+            ansible-playbook ansible/build.yaml -i "localhost, "
