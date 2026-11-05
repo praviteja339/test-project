@@ -1,0 +1,191 @@
+# Playbook to be run when import is required for resources added after terraform apply(create/build/deploy)
+# This will allow for importing existing resources more easily but should be done by DevOps
+# NOT intended for pipeline usage
+- name: TF Import Playbook
+  hosts: localhost
+  connection: local
+
+  tasks:
+
+#Overwrite on command line as needed by adding -e "variable=foo other_var=bar" to ansible-playbook command see:
+## https://docs.ansible.com/ansible/latest/user_guide/playbooks_variables.html#passing-variables-on-the-command-line
+  - set_fact:
+      service_principal_id: 
+      service_principal_secret: "replace_me"
+      subscription_id: 
+      tenant_id: 
+
+  - name: Login to Azure using Service Principal {{ service_principal_id }}
+    command: >
+      az login
+      --service-principal
+      --username '{{ service_principal_id }}'
+      --password '{{ service_principal_secret }}'
+      --tenant '{{ tenant_id }}'
+
+  - name: Set subscription {{ subscription_id }} to be current and active
+    command: az account set --subscription {{ subscription_id }}
+
+  - name: Include SRE Config file
+    include_vars:
+      file: ../sre_infra_config.yaml
+    no_log: true
+
+  - name: Download {{ cr_hi_uat_cert_name }} Secret from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ cr_hi_uat_cert_name }} -f ../terraform/{{ cr_hi_uat_cert_name }}.data
+
+  - name: Decode {{ cr_hi_uat_cert_name }}.data
+    shell: cat ../terraform/{{ cr_hi_uat_cert_name }}.data | base64 -d > ../terraform/{{ cr_hi_uat_cert_name }}.pfx
+    no_log: true
+
+  - name: Download {{ test_uat_cert_name }} Secret from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ test_uat_cert_name }} -f ../terraform/{{ test_uat_cert_name }}.data
+
+  - name: Decode {{ test_uat_cert_name }}.data
+    shell: cat ../terraform/{{ test_uat_cert_name }}.data | base64 -d > ../terraform/{{ test_uat_cert_name }}.pfx
+    no_log: true
+
+  - name: Download {{ helo_uat_cert_name }} Secret from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ helo_uat_cert_name }} -f ../terraform/{{ helo_uat_cert_name }}.data
+
+  - name: Decode {{ helo_uat_cert_name }}.data
+    shell: cat ../terraform/{{ helo_uat_cert_name }}.data | base64 -d > ../terraform/{{ helo_uat_cert_name }}.pfx
+    no_log: true
+
+  - name: Download {{ hi_uat_cert_name }} Secret from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ hi_uat_cert_name }} -f ../terraform/{{ hi_uat_cert_name }}.data
+
+  - name: Decode {{ hi_uat_cert_name }}.data
+    shell: cat ../terraform/{{ hi_uat_cert_name }}.data | base64 -d > ../terraform/{{ hi_uat_cert_name }}.pfx
+    no_log: true
+
+  - name: Download {{ hi_hi_cert_name }} Secret from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ hi_hi_cert_name }} -f ../terraform/{{ hi_hi_cert_name }}.data
+
+  - name: Decode {{ hi_hi_cert_name }}.data
+    shell: cat ../terraform/{{ hi_hi_cert_name }}.data | base64 -d > ../terraform/{{ hi_hi_cert_name }}.pfx
+    no_log: true
+
+  - name: Download {{ hi_pricing_cert_name }} Secret from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ hi_pricing_cert_name }} -f ../terraform/{{ hi_pricing_cert_name }}.data
+
+  - name: Decode {{ hi_pricing_cert_name }}.data
+    shell: cat ../terraform/{{ hi_pricing_cert_name }}.data | base64 -d > ../terraform/{{ hi_pricing_cert_name }}.pfx
+    no_log: true
+
+  # test_ca
+
+  - name: Download {{ test_ca_cert_name }} Cert data from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ test_ca_cert_name }} -f {{ source_dir }}/terraform/{{ test_ca_cert_name }}.data
+
+  - name: Generate {{ test_ca_cert_name }}.pfx
+    shell: cat {{ source_dir }}/terraform/{{ test_ca_cert_name }}.data | base64 -d > {{ source_dir }}/terraform/{{ test_ca_cert_name }}.pfx
+    no_log: true
+
+  # query_central_ca
+
+  - name: Download {{ hihi_ca_cert_name }} Cert data from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ hihi_ca_cert_name }} -f {{ source_dir }}/terraform/{{ hihi_ca_cert_name }}.data
+
+  - name: Generate {{ query_central_uat_cert_name }}.pfx
+    shell: cat {{ source_dir }}/terraform/{{ hihi_ca_cert_name }}.data | base64 -d > {{ source_dir }}/terraform/{{ hihi_ca_cert_name }}.pfx
+    no_log: true
+
+  # hi_ca
+  
+  - name: Download {{ hi_ca_cert_name }} Secret from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ hi_ca_cert_name }} -f ../terraform/{{ hi_ca_cert_name }}.data
+
+  - name: Decode {{ hi_ca_cert_name }}.data
+    shell: cat ../terraform/{{ hi_ca_cert_name }}.data | base64 -d > ../terraform/{{ hi_ca_cert_name }}.pfx
+    no_log: true
+
+
+  ###################
+  # TERRAFORM
+  ###################
+
+  - name: Inject Terraform vars
+    template:
+      src: ../terraform/terraform.tfvars.j2
+      dest: ../terraform/terraform.tfvars
+
+  - name: Lookup TF state store key
+    command: az storage account keys list -n testterraform -g TEST-DevOps --subscription xxxx --query '[0].value' -o tsv
+    register: tf_state_store_key
+    no_log: true
+
+  - name: Run Terraform Plan (produce required files)
+    terraform:
+      project_path: ../terraform/
+      state: planned
+      force_init: yes
+      plan_file: ../plans/plan.tf
+      backend_config:
+        access_key: "{{ tf_state_store_key.stdout }}"
+        storage_account_name: "{{ tf_state_store_name }}"
+        container_name: "{{ tf_state_store_container_name }}"
+        key: "{{ tf_state_store_file_name }}"
+
+  - name: Get Plan from file
+    shell: terraform show ../plans/plan.tf -no-color
+    register: terraform
+    args:
+      chdir: "../terraform/"
+
+  - name: Output Plan
+    debug:
+      msg: "{{ terraform.stdout_lines }}"
+
+##################
+# 2. USE TERRAFORM IMPORT to INCLUDE ANY EXISTING RESOURCES YOU WANT TO THE STATEFILE
+##################
+# NOTE IF ANY OF THESE EXIST IN THE STATE FILE ALREADY, YOU MAY NEED TO RUN `terraform state rm resource_type.resource_name`
+# NOTE: These Import statements are not required but can be used to import items as needed, use the apply output to get dat back about what needs importing
+
+#  - name: Import Application Gateway Public IP Address
+#    command: "terraform import azurerm_public_ip.app_gateway /subscriptions/{{ subscription_id }}/resourceGroups/{{ resource_group_name }}/providers/Microsoft.Network/publicIPAddresses/app_gateway"
+#    args:
+#      chdir: "{{ source_dir }}/terraform/"
+
+##################
+# 3. USE TERRAFORM PLAN TO REGENERATE PLAN POST-IMPORT (REQUIRED)
+##################
+
+#  - name: Run Terraform Plan (produce required files)
+#    terraform:
+#      project_path: '{{ source_dir }}/terraform/'
+#      state: planned
+#      force_init: yes
+#      plan_file: '{{ source_dir }}/plans/plan.tf'
+#      backend_config:
+#        access_key: "{{ tf_state_store_key }}"
+#        storage_account_name: "{{ tf_state_store_name }}"
+#        container_name: "{{ tf_state_store_container_name }}"
+#        key: "{{ tf_state_store_file_name }}"
+#
+#  - name: Get Plan from file
+#    shell: terraform show {{ source_dir }}/plans/plan.tf -no-color
+#    register: terraform
+#    args:
+#      chdir: "{{ source_dir }}/terraform/"
+#
+#  - name: Output Plan
+#    debug:
+#      msg: "{{ terraform.stdout_lines }}"
+
+##################
+# 4. USE TERRAFORM APPLY TO FINISH CREATING/IMPORT PROCESS
+##################
+
+#  - name: Run Terraform Apply
+#    terraform:
+#      project_path: "{{ source_dir }}/terraform/"
+#      state: present
+#      force_init: true
+#      lock: true
+#      backend_config:
+#        access_key: "{{ tf_state_store_key }}"
+#        storage_account_name: "{{ tf_state_store_name }}"
+#        container_name: "{{ tf_state_store_container_name }}"
+#        key: "{{ tf_state_store_file_name }}"
