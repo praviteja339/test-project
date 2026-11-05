@@ -1,0 +1,41 @@
+- name: Encrypt all files
+  hosts: localhost
+  connection: local
+
+  vars:
+    working_directory: "{{ playbook_dir }}"
+    enc_files: []
+    delete: false
+
+  tasks:
+
+    - name: Find SOPS "Key"
+      command: az keyvault key show --name test-sops-uat --vault-name test-sops-prod --query key.kid
+      register: key
+
+    - name: Get SRE Infra Config
+      find:
+        paths: "{{ working_directory }}"
+        patterns: "sre_infra_config.yaml"
+        recurse: yes
+        excludes: "*.enc.yaml,decrypt.yaml,encrypt_config.yaml"
+      register: files
+
+    - name: Add Decrypted file to Array
+      set_fact:
+        enc_files: "{{ enc_files + [item.path] }}"
+      loop: "{{ files.files }}"
+      no_log: true
+
+    - name: Encrypt .yaml config file
+      shell: sops --encrypt --azure-kv {{ key.stdout }} {{ item }} > {{ item | regex_replace( '(yaml)', 'enc.yaml' ) }}
+      async: 10
+      poll: 0
+      loop: "{{ enc_files }}"
+
+    - name: Delete Decrypted file
+      when: delete|bool == true
+      command: >
+        find . -type f -name "*.yaml"
+        \! \( -name "decrypt.yaml" -o -name "encrypt_all.yaml" -o -name "encrypt_file.yaml" -o -name "*.enc.yaml" \)
+        -delete
