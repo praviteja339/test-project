@@ -1,0 +1,75 @@
+- name: TerraForm Plan Playbook
+  hosts: localhost
+  connection: local
+
+  tasks:
+
+  - set_fact:
+      service_principal_id: 
+      service_principal_secret: "replace_me"
+      subscription_id: 
+      tenant_id: 
+      source_dir: ""
+
+  - name: Login to Azure using Service Principal {{ service_principal_id }}
+    command: >
+      az login
+      --service-principal
+      --username '{{ service_principal_id }}'
+      --password '{{ service_principal_secret }}'
+      --tenant '{{ tenant_id }}'
+
+  - name: Set subscription {{ subscription_id }} to be current and active
+    command: az account set --subscription {{ subscription_id }}
+
+  - name: Decrypt SRE config file
+    shell: sops --decrypt {{ source_dir }}/sre_infra_config.enc.yaml > {{ source_dir }}/sre_infra_config.yaml
+    no_log: true
+
+  - name: Include SRE Config file
+    include_vars:
+      file: ../sre_infra_config.yaml
+    no_log: true
+
+  - name: Download {{ hi_uat_cert_name }} Secret from AKV
+    command: az keyvault secret download --vault-name {{ tls_key_vault_name }} -n {{ hi_uat_cert_name }} -f ../terraform/{{ hi_uat_cert_name }}.data
+
+  - name: Decode {{ hi_uat_cert_name }}.data
+    shell: cat ../terraform/{{ hi_uat_cert_name }}.data | base64 -d > ../terraform/{{ hi_uat_cert_name }}.pfx
+    no_log: true
+
+###################
+# TERRAFORM
+###################
+
+  - name: Inject Terraform vars
+    template:
+      src: ../terraform/terraform.tfvars.j2
+      dest: ../terraform/terraform.tfvars
+
+  - name: Lookup TF state store key
+    command: az storage account keys list -n testterraform -g TEST-DevOps --subscription xxxx --query '[0].value' -o tsv
+    register: tf_state_store_key
+    no_log: true
+
+  - name: Run Terraform Plan (produce required files)
+    terraform:
+      project_path: ../terraform/
+      state: planned
+      force_init: yes
+      plan_file: ../plans/plan.tf
+      backend_config:
+        access_key: "{{ tf_state_store_key.stdout }}"
+        storage_account_name: "{{ tf_state_store_name }}"
+        container_name: "{{ tf_state_store_container_name }}"
+        key: "{{ tf_state_store_file_name }}"
+
+  - name: Get Plan from file
+    shell: terraform show ../plans/plan.tf -no-color
+    register: terraform
+    args:
+      chdir: "../terraform/"
+
+  - name: Output Plan
+    debug:
+      msg: "{{ terraform.stdout_lines }}"
