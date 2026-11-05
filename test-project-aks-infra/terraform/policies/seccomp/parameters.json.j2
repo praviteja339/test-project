@@ -1,0 +1,59 @@
+{
+  "effect":{
+    "type":"String",
+    "metadata":{
+      "displayName":"Effect",
+      "description":"'audit' allows a non-compliant resource to be created or updated, but flags it as non-compliant. 'deny' blocks the non-compliant resource creation or update. 'disabled' turns off the policy."
+    },
+    "allowedValues":[
+      "audit",
+      "deny",
+      "disabled"
+    ],
+    "defaultValue":"deny"
+
+  },
+  "excludedNamespaces":{
+    "type":"Array",
+    "metadata":{
+      "displayName":"Namespace exclusions",
+      "description":"List of Kubernetes namespaces to exclude from policy evaluation."
+    },
+    "defaultValue":[
+      "kube-system",
+      "gatekeeper-system",
+      "azure-arc"
+    ]
+  },
+  "namespaces":{
+    "type":"Array",
+    "metadata":{
+      "displayName":"Namespace inclusions",
+      "description":"List of Kubernetes namespaces to only include in policy evaluation. An empty list means the policy is applied to all resources in all namespaces."
+    },
+    "defaultValue":[
+
+    ]
+  },
+  "allowedProfiles":{
+    "type":"Array",
+    "metadata":{
+      "displayName":"Allowed seccomp profiles",
+      "description":"The list of seccomp profiles that containers are allowed to use. E.g. 'runtime/default;docker/default'. Provide empty list as input to block everything."
+    },
+    "defaultValue":[
+      "runtime/default",
+      "docker/default"
+    ]
+  },
+  "excludedContainers":{
+    "type":"Array",
+    "metadata":{
+      "displayName":"Containers exclusions",
+      "description":"The list of InitContainers and Containers to exclude from policy evaluation. The identify is the name of container. Use an empty list to apply this policy to all containers in all namespaces."
+    },
+    "defaultValue":[
+
+    ]
+  }
+}
