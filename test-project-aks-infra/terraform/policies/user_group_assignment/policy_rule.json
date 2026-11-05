@@ -1,0 +1,43 @@
+{
+    "if":{
+      "field":"type",
+      "in":[
+        "AKS Engine",
+        "Microsoft.Kubernetes/connectedClusters",
+        "Microsoft.ContainerService/managedClusters"
+      ]
+    },
+    "then":{
+      "effect":"[parameters('effect')]",
+      "details":{
+        "templateInfo": {
+          "sourceType": "PublicURL",
+          "url":"https://store.policy.core.windows.net/kubernetes/allowed-users-groups/v2/template.yaml"
+        },
+        "excludedNamespaces":"[parameters('excludedNamespaces')]",
+        "namespaces":"[parameters('namespaces')]",
+        "labelSelector":"[parameters('labelSelector')]",
+        "values":{
+          "runAsUser":{
+            "rule":"[parameters('runAsUserRule')]",
+            "ranges":"[parameters('runAsUserRanges').ranges]"
+          },
+          "runAsGroup":{
+            "rule":"[parameters('runAsGroupRule')]",
+            "ranges":"[parameters('runAsGroupRanges').ranges]"
+          },
+          "supplementalGroups":{
+            "rule":"[parameters('supplementalGroupsRule')]",
+            "ranges":"[parameters('supplementalGroupsRanges').ranges]"
+          },
+          "fsGroup":{
+            "rule":"[parameters('fsGroupRule')]",
+            "ranges":"[parameters('fsGroupRanges').ranges]"
+          },
+          "excludedContainers":"[parameters('excludedContainers')]"
+        },
+        "apiGroups": [""],
+        "kinds": ["Pod"]
+      }
+    }
+}
