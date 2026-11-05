@@ -1,0 +1,205 @@
+- name: Verify Application Gateway Deployment and Configuration
+  hosts: localhost
+  connection: local
+
+  tasks:
+
+###################
+# Resource Group Verification
+###################
+
+  - name: Verify RG was created
+    command: az group exists --name {{ resource_group_name }}
+    register: rg
+    failed_when:
+      - rg.stdout != "true"
+
+  - name: Verify RG was created in correct location
+    command: az group show --name {{ resource_group_name }} --query location --output tsv
+    register: rg_loc
+    failed_when:
+      - rg_loc.stdout !=  location
+
+###################
+# Network Verification
+###################
+
+  - name: Verify {{ sre_vnet_name }} exists
+    command: az network vnet show -g {{ resource_group_name }} -n {{ sre_vnet_name }}
+
+  - name: Verify {{ firewall_name }} Subnet exists
+    command: az network vnet subnet show -g {{ resource_group_name }} --vnet-name {{ sre_vnet_name }} -n AzureFirewallSubnet
+
+  - name: Verify {{ ag_subnet_name }} exists
+    command: az network vnet subnet show -g {{ resource_group_name }} --vnet-name {{ sre_vnet_name }} -n {{ ag_subnet_name }}
+
+  - name: Verify {{ sre_network_security_group_name }} exists
+    command: az network nsg show --resource-group {{ resource_group_name }} -n {{ sre_network_security_group_name }}
+
+  - name: Verify {{ sre_network_security_group_name }} is Assigned to {{ ag_subnet_name }}
+    command: az network vnet subnet list --resource-group {{ resource_group_name }} --vnet-name {{ sre_vnet_name }} --query "[?name=='{{ ag_subnet_name }}'].networkSecurityGroup.id" -o tsv
+    register: sn_to_nsg
+    failed_when:
+      - sn_to_nsg.stdout == ""
+
+  - name: Verify {{ sre_network_security_group_name }} has security rules applied
+    command: az network nsg show --resource-group {{ resource_group_name }} -n {{ sre_network_security_group_name }} --query "securityRules[*].name" -o tsv
+    register: security_rule
+    failed_when:
+      - item not in security_rule.stdout
+    loop:
+      - "Allow-ALL-from-Firewall"
+      - "Allow-ALL-from-{{ ag_name }}"
+      - "AzureGatewayManager"
+
+  - name: Verify {{ ag_name }} vNET Peerings setup to Prod,UAT and CA
+    command: az network vnet peering show -g {{ resource_group_name }} --vnet-name {{ sre_vnet_name }} -n {{ item }}
+    loop:
+      - "{{ sre_to_uat_peer_name }}"
+      - "{{ sre_to_prod_peer_name }}"
+      - "{{ sre_to_ca_peer_name }}"
+      - "{{ sre_to_staging_peer_name }}"
+      - "{{ sre_to_cit_peer_name }}"
+     
+  - name: Verify Peerings setup from Prod to {{ ag_name }} vNET
+    command: az network vnet peering show -g TEST-AKS-Prod --vnet-name TEST-AKS-Prod-vNET -n {{ prod_peer_to_sre_name }}
+
+  - name: Verify Peerings setup from UAT to {{ ag_name }} vNET
+    command: az network vnet peering show -g TEST-AKS-UAT --vnet-name TEST-AKS-UAT-vNET -n {{ uat_peer_to_sre_name }}
+  
+  - name: Verify Peerings setup from CA to {{ ag_name }} vNET
+    command: az network vnet peering show -g TEST-AKS-CA --vnet-name TEST-AKS-CA-vNET -n {{ ca_peer_to_sre_name }}
+
+#   - name: Verify Peerings setup from Staging to {{ ag_name }} vNET
+#     command: az network vnet peering show -g TEST-AKS-Staging --vnet-name TEST-AKS-Staging-vNET -n {{ staging_peer_to_sre_name }}
+
+  - name: Verify Peerings setup from CIT to {{ ag_name }} vNET
+    command: az network vnet peering show -g TEST-AKS-CIT --vnet-name TEST-AKS-CIT-vNET -n {{ cit_peer_to_sre_name }}
+  
+####################
+## Firewall Verification
+####################
+
+  - name: Add azure-firewall extension
+    command: az extension add --name azure-firewall
+
+  - name: Verify {{ firewall_name }} exists
+    command: az network firewall show -g {{ resource_group_name }} -n {{ firewall_name }}
+
+  - name: Verify {{ firewall_name }} NAT Rules are configured
+    command: >
+      az network firewall nat-rule show
+      --collection-name {{ nat_rule_collection_name }}
+      -n {{ item }}
+      -g {{ resource_group_name }}
+      --firewall-name {{ firewall_name }}
+      --query 'translatedAddress'
+      -o tsv
+    register: translate_ip
+    failed_when: translate_ip.stdout != ag_private_ip
+    loop:
+      - http
+      - https
+
+####################
+## Application Gateway Verification
+####################
+
+  - name: Verify {{ ag_name }} exists
+    command: az network application-gateway show -g {{ resource_group_name }} -n {{ ag_name }}
+
+  - name: Verify {{ ag_name }} Private IP
+    command: az network application-gateway frontend-ip list -g {{ resource_group_name }} --gateway-name {{ ag_name }} --query '[1].[privateIpAddress]' -o tsv
+    register: app_gateway_private_ip
+    failed_when:
+      - app_gateway_private_ip.stdout != ag_private_ip
+
+  - name: Verify Listeners exists
+    command: az network application-gateway http-listener show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n {{ item }}
+    loop:
+#      - portal
+#      - portal_https
+#      - portal_uat
+#      - portal_uat_https
+      - hi_hi
+      - hi_hi_https
+      - hi_uat
+      - hi_uat_https
+      - test_ca
+      - test_ca_https
+      - hi_test_aie
+      - hi_test_https
+
+  - name: Verify Listeners Host Names
+    command: az network application-gateway http-listener show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n {{ item }} --query 'hostNames' -o tsv
+    register: host_names
+    failed_when: host_names.stdout == ''
+    loop:
+#      - portal
+#      - portal_https
+#      - portal_uat
+#      - portal_uat_https
+      - hi_hi
+      - hi_hi_https
+      - hi_uat
+      - hi_uat_https
+      - test_ca
+      - test_ca_https
+      - hi_test_aie
+      - hi_test_https
+
+  - name: Verify "http_settings" exists
+    command: az network application-gateway http-settings show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n {{ item }}
+    loop:
+      #      - portal
+      #      - portal_https
+      #      - portal_uat
+      #      - portal_uat_https
+      - hi_hi
+      - hi_hi_https
+      - hi_uat
+      - hi_uat_https
+      - test_ca
+      - test_ca_https
+      - hi_test_aie
+      - hi_test_https
+
+  - name: Verify {{ ag_name }} Prod Backend Pool exists
+    command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n prod_backend_pool
+
+  - name: Verify {{ ag_name }} Prod Backend Pool target
+    command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n prod_backend_pool --query 'backendAddresses[*].ipAddress' -o tsv
+    register: backend_target
+    failed_when: backend_target.stdout != prod_aks_load_balancer_ip
+
+  - name: Verify {{ ag_name }} UAT Backend Pool exists
+    command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n uat_backend_pool
+
+  - name: Verify {{ ag_name }} UAT Backend Pool target
+    command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n uat_backend_pool --query 'backendAddresses[*].ipAddress' -o tsv
+    register: backend_target
+    failed_when: backend_target.stdout !=  uat_aks_load_balancer_ip
+
+  - name: Verify {{ ag_name }} CA Backend Pool exists
+    command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n ca_backend_pool
+
+  - name: Verify {{ ag_name }} CA Backend Pool target
+    command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n ca_backend_pool --query 'backendAddresses[*].ipAddress' -o tsv
+    register: backend_target
+    failed_when: backend_target.stdout !=  ca_aks_load_balancer_ip
+
+#   - name: Verify {{ ag_name }} Staging Backend Pool exists
+#     command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n staging_backend_pool
+#
+#   - name: Verify {{ ag_name }} Staging Backend Pool target
+#     command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n staging_backend_pool --query 'backendAddresses[*].ipAddress' -o tsv
+#     register: backend_target
+#     failed_when: backend_target.stdout !=  staging_aks_load_balancer_ip
+
+  - name: Verify {{ ag_name }} CIT Backend Pool exists
+    command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n cit_backend_pool
+
+  - name: Verify {{ ag_name }} CIT Backend Pool target
+    command: az network application-gateway address-pool show -g {{ resource_group_name }} --gateway-name {{ ag_name }} -n cit_backend_pool --query 'backendAddresses[*].ipAddress' -o tsv
+    register: backend_target
+    failed_when: backend_target.stdout !=  cit_aks_load_balancer_ip 
