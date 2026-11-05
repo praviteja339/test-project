@@ -1,0 +1,33 @@
+- name: Decrypt files
+  hosts: localhost
+  connection: local
+
+  vars:
+    working_directory:  "{{ playbook_dir }}"
+    enc_files: []
+    pull: true
+
+  tasks:
+
+    - name: Checkout Master and Pull
+      when: pull|bool == true
+      shell: git checkout master && git pull
+
+    - name: Get SRE Infra Config
+      find:
+        paths: "{{ working_directory }}"
+        patterns: "sre_infra_config.enc.yaml"
+        recurse: yes
+      register: files
+
+    - name: Add Encrypted files to Array
+      no_log: True
+      set_fact:
+        enc_files: "{{ enc_files + [item.path] }}"
+      loop: "{{ files.files }}"
+
+    - name: Decrypt .yaml config files
+      shell: sops --decrypt {{ item }} > {{ item | regex_replace('(enc.yaml)', 'yaml') }}
+      async: 10
+      poll: 0
+      loop: "{{ enc_files }}"
