@@ -1,0 +1,321 @@
+{
+  "effect":{
+    "type":"String",
+    "metadata":{
+      "displayName":"Effect",
+      "description":"'audit' allows a non-compliant resource to be created or updated, but flags it as non-compliant. 'deny' blocks the non-compliant resource creation or update. 'disabled' turns off the policy."
+    },
+    "allowedValues":[
+      "audit",
+      "deny",
+      "disabled"
+    ],
+    "defaultValue":"deny"
+
+  },
+  "excludedNamespaces":{
+    "type":"Array",
+    "metadata":{
+      "displayName":"Namespace exclusions",
+      "description":"List of Kubernetes namespaces to exclude from policy evaluation."
+    },
+    "defaultValue":[
+      "kube-system",
+      "gatekeeper-system",
+      "azure-arc"
+    ]
+  },
+  "namespaces":{
+    "type":"Array",
+    "metadata":{
+      "displayName":"Namespace inclusions",
+      "description":"List of Kubernetes namespaces to only include in policy evaluation. An empty list means the policy is applied to all resources in all namespaces."
+    },
+    "defaultValue":[
+
+    ]
+  },
+  "labelSelector":{
+    "type":"Object",
+    "metadata":{
+      "displayName":"Kubernetes label selector",
+      "description":"Label query to select Kubernetes resources for policy evaluation. An empty label selector matches all Kubernetes resources."
+    },
+    "defaultValue":{
+
+    },
+    "schema":{
+      "description":"A label selector is a label query over a set of resources. The result of matchLabels and matchExpressions are ANDed. An empty label selector matches all resources.",
+      "type":"object",
+      "properties":{
+        "matchLabels":{
+          "description":"matchLabels is a map of {key,value} pairs.",
+          "type":"object",
+          "additionalProperties":{
+            "type":"string"
+          },
+          "minProperties":1
+        },
+        "matchExpressions":{
+          "description":"matchExpressions is a list of values, a key, and an operator.",
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{
+              "key":{
+                "description":"key is the label key that the selector applies to.",
+                "type":"string"
+              },
+              "operator":{
+                "description":"operator represents a key's relationship to a set of values.",
+                "type":"string",
+                "enum":[
+                  "In",
+                  "NotIn",
+                  "Exists",
+                  "DoesNotExist"
+                ]
+              },
+              "values":{
+                "description":"values is an array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty.",
+                "type":"array",
+                "items":{
+                  "type":"string"
+                }
+              }
+            },
+            "required":[
+              "key",
+              "operator"
+            ],
+            "additionalProperties":false
+          },
+          "minItems":1
+        }
+      },
+      "additionalProperties":false
+    }
+  },
+  "runAsUserRule":{
+    "type":"String",
+    "metadata":{
+      "displayName":"Run as user rule",
+      "description":"The 'RunAsUser' rule that containers are allowed to run with. MustRunAs requires at least one range to be specified. MustRunAsNonRoot requires the pod be submitted with non-zero runAsUser or have USER directive defined (using a numeric UID) in the image. RunAsAny allows any runAsUser to be specified"
+    },
+    "allowedValues":[
+      "MustRunAs",
+      "MustRunAsNonRoot",
+      "RunAsAny"
+    ],
+    "defaultValue":"MustRunAsNonRoot"
+  },
+  "runAsUserRanges":{
+    "type":"Object",
+    "metadata":{
+      "displayName":"Allowed user ID ranges",
+      "description":"The user ID ranges that are allowed for containers to use."
+    },
+    "defaultValue":{
+      "ranges":[
+
+      ]
+    },
+    "schema":{
+      "type":"object",
+      "properties":{
+        "ranges":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{
+              "min":{
+                "type":"integer"
+              },
+              "max":{
+                "type":"integer"
+              }
+            },
+            "required":[
+              "min",
+              "max"
+            ],
+            "additionalProperties":false
+          }
+        }
+      },
+      "required":[
+        "ranges"
+      ],
+      "additionalProperties":false
+    }
+  },
+  "runAsGroupRule":{
+    "type":"String",
+    "metadata":{
+      "displayName":"Run as group rule",
+      "description":"The 'RunAsGroup' rule that containers are allowed to run with. MustRunAs requires at least one range to be specified. MayRunAs does not require that 'RunAsGroup' be specified. RunAsAny allows any"
+    },
+    "allowedValues":[
+      "MustRunAs",
+      "MayRunAs",
+      "RunAsAny"
+    ],
+    "defaultValue":"RunAsAny"
+  },
+  "runAsGroupRanges":{
+    "type":"Object",
+    "metadata":{
+      "displayName":"Allowed group ID ranges",
+      "description":"The group ID ranges that are allowed for containers to use."
+    },
+    "defaultValue":{
+      "ranges":[
+
+      ]
+    },
+    "schema":{
+      "type":"object",
+      "properties":{
+        "ranges":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{
+              "min":{
+                "type":"integer"
+              },
+              "max":{
+                "type":"integer"
+              }
+            },
+            "required":[
+              "min",
+              "max"
+            ],
+            "additionalProperties":false
+          }
+        }
+      },
+      "required":[
+        "ranges"
+      ],
+      "additionalProperties":false
+    }
+  },
+  "supplementalGroupsRule":{
+    "type":"String",
+    "metadata":{
+      "displayName":"Supplemental group rule",
+      "description":"The 'SupplementalGroups' rule that containers are allowed to run with. MustRunAs requires at least one range to be specified. MayRunAs does not require that 'SupplementalGroups' be specified. RunAsAny allows any"
+    },
+    "allowedValues":[
+      "MustRunAs",
+      "MayRunAs",
+      "RunAsAny"
+    ],
+    "defaultValue":"RunAsAny"
+  },
+  "supplementalGroupsRanges":{
+    "type":"Object",
+    "metadata":{
+      "displayName":"Allowed supplemental group ID ranges",
+      "description":"The supplemental group ID ranges that are allowed for containers to use."
+    },
+    "defaultValue":{
+      "ranges":[
+
+      ]
+    },
+    "schema":{
+      "type":"object",
+      "properties":{
+        "ranges":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{
+              "min":{
+                "type":"integer"
+              },
+              "max":{
+                "type":"integer"
+              }
+            },
+            "required":[
+              "min",
+              "max"
+            ],
+            "additionalProperties":false
+          }
+        }
+      },
+      "required":[
+        "ranges"
+      ],
+      "additionalProperties":false
+    }
+  },
+  "fsGroupRule":{
+    "type":"String",
+    "metadata":{
+      "displayName":"File system group rule",
+      "description":"The 'FSGroup' rule that containers are allowed to run with. MustRunAs requires at least one range to be specified. MayRunAs does not require that 'FSGroup' be specified. RunAsAny allows any"
+    },
+    "allowedValues":[
+      "MustRunAs",
+      "MayRunAs",
+      "RunAsAny"
+    ],
+    "defaultValue":"RunAsAny"
+  },
+  "fsGroupRanges":{
+    "type":"Object",
+    "metadata":{
+      "displayName":"Allowed file system group ID ranges",
+      "description":"The file system group ranges that are allowed for pods to use."
+    },
+    "defaultValue":{
+      "ranges":[
+
+      ]
+    },
+    "schema":{
+      "type":"object",
+      "properties":{
+        "ranges":{
+          "type":"array",
+          "items":{
+            "type":"object",
+            "properties":{
+              "min":{
+                "type":"integer"
+              },
+              "max":{
+                "type":"integer"
+              }
+            },
+            "required":[
+              "min",
+              "max"
+            ],
+            "additionalProperties":false
+          }
+        }
+      },
+      "required":[
+        "ranges"
+      ],
+      "additionalProperties":false
+    }
+  },
+  "excludedContainers":{
+    "type":"Array",
+    "metadata":{
+      "displayName":"Containers exclusions",
+      "description":"The list of InitContainers and Containers to exclude from policy evaluation. The identify is the name of container. Use an empty list to apply this policy to all containers in all namespaces."
+    },
+    "defaultValue":[
+
+    ]
+  }
+}
